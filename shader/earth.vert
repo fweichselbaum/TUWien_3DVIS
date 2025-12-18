@@ -3,16 +3,11 @@
 uniform mat4 p3d_ModelViewProjectionMatrix;
 
 in vec4 p3d_Vertex;
+in vec2 p3d_MultiTexCoord0; // Standard Panda3D UV mapping
 
-
-//uniform float point_size;
-
-flat out uint vertex_id;
+out vec2 texcoord;
 
 void main() {
     gl_Position = p3d_ModelViewProjectionMatrix * p3d_Vertex;
-    
-    gl_PointSize = max(2.0, 1000 / gl_Position.w);
-
-    vertex_id = gl_VertexID;
+    texcoord = p3d_MultiTexCoord0;
 }
