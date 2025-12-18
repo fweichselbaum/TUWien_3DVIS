@@ -240,7 +240,7 @@ class SatelliteVisualizer(ShowBase):
         # self.quad = self.render2d.attachNewNode(cm.generate())
         self.quad = self.quad_root.attachNewNode(cm.generate())
         self.quad.setTransparency(True) # TODO test 
-        self.quad.setTexture(self.tex_id)
+        self.quad.setTexture(self.tex_visual)
 
         self.accept("mouse1", self.pick_vertex)
 
