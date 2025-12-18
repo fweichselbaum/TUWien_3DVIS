@@ -214,7 +214,7 @@ class SatelliteVisualizer(ShowBase):
             border_size=0.05,
             point_color=(1,1,1,1),
             border_color=(0,0,0,1),
-            selected_color=(1,0,0,1),
+            selected_color=(1,0,1,1),
             selected_id = -1,
         )
 
@@ -274,7 +274,7 @@ class SatelliteVisualizer(ShowBase):
 
 
     def render_satellites(self, task):
-        if task.frame % 30 != 0:
+        if task.frame % 2 == 0:
             return task.cont
 
         time = datetime.now(timezone.utc)
