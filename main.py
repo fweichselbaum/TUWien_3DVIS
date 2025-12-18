@@ -10,7 +10,7 @@ from panda3d.core import (
     AmbientLight,
     GeomVertexFormat, GeomVertexData, GeomVertexWriter,
     Geom, GeomPoints, GeomNode,
-    CallbackNode, PythonCallbackObject
+    ShaderAttrib,
 )
 from sgp4 import omm
 from sgp4.propagation import gstime
@@ -21,7 +21,6 @@ import numpy as np
 import logging
 import os
 import sys
-import ctypes
 
 # Constants
 SCALE = 0.001  # 1 unit = 1000 km
@@ -29,10 +28,9 @@ EARTH_RADIUS = 6371.0
 EARTH_TEXTURE_OFFSET = 160 # 148 TODO fix with better texture
 
 # Shader
-ENABLE_SHADER = True
+ENABLE_SHADER = False
 VERT_SHADER = "shader/satellites.vert"
 FRAG_SHADER = "shader/satellites.frag"
-GL_PROGRAM_POINT_SIZE = 0x8642
 
 # Data source
 OMM_FILE = "all.csv"
@@ -63,6 +61,8 @@ class SatelliteVisualizer(ShowBase):
         self.setup_earth()
 
         self.load_omm_model()
+
+        self.setup_shader()
 
         self.taskMgr.add(self.render_satellites, "render")
 
@@ -143,30 +143,33 @@ class SatelliteVisualizer(ShowBase):
 
         node = GeomNode("points")
         node.addGeom(geom)
-        points_np = self.render.attachNewNode(node)
+        self.points_np = self.render.attachNewNode(node)
 
-        if ENABLE_SHADER:
-            def enable_point_size_ctypes(data):
-                if sys.platform == "win32":
-                    gl = ctypes.windll.opengl32
-                elif sys.platform.startswith("linux"):
-                    try:
-                        gl = ctypes.CDLL("libGL.so.1")
-                    except:
-                        gl = ctypes.CDLL("libGL.so")
-                gl.glEnable(GL_PROGRAM_POINT_SIZE)
-            cb_node = CallbackNode("EnablePointSize")
-            cb_node.setCullCallback(PythonCallbackObject(enable_point_size_ctypes))
-            self.render.attachNewNode(cb_node)
-            shader = Shader.load(Shader.SL_GLSL, vertex=VERT_SHADER, fragment=FRAG_SHADER)
-            points_np.setShader(shader)
-            points_np.setShaderInput("base_point_size", 100.0) 
-            points_np.setTransparency(True)
-        else:
-            points_np.setLightOff()
-            points_np.setRenderModeThickness(0.025)
-            points_np.setRenderModePerspective(True)
-            points_np.setColor(1, 1, 1, 1)
+
+    def setup_shader(self):
+        if not ENABLE_SHADER:
+            self.points_np.setLightOff()
+            self.points_np.setRenderModeThickness(0.025)
+            self.points_np.setRenderModePerspective(True)
+            self.points_np.setColor(1, 1, 1, 1)
+            return
+
+        shader = Shader.load(
+            Shader.SL_GLSL,
+            vertex=VERT_SHADER,
+            fragment=FRAG_SHADER,
+        )
+
+        attrib = ShaderAttrib.make(shader)
+        attrib = attrib.setFlag(ShaderAttrib.F_shader_point_size, True)
+        self.points_np.setShader(shader)
+        self.points_np.setAttrib(attrib)
+        self.points_np.setShaderInputs(
+            point_size=100,
+            border_size=0.05,
+            point_color=(1,1,1,1),
+            border_color=(0,0,0,1),
+        )
             
 
     def render_satellites(self, task):

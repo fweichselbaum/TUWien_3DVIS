@@ -1,15 +1,22 @@
 #version 450
 
-in vec4 v_color;
+uniform float border_size;
+uniform vec4 point_color;
+uniform vec4 border_color;
 
 out vec4 fragColor;
 
 void main() {
-    vec2 coord = gl_PointCoord - vec2(0.5);
+    float point_thresh = 0.5;
+    float border_tresh = point_thresh - border_size;
+    vec2 coord = gl_PointCoord - vec2(point_thresh);
+    float dist = length(coord);
 
-    if (length(coord) > 0.5) {
+    if (dist > point_thresh) {
         discard;
+    } else if (dist > border_tresh) {
+        fragColor = border_color;
+    } else {
+        fragColor = point_color;
     }
-
-    fragColor = v_color;
 }
