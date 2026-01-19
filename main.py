@@ -68,17 +68,28 @@ class SatelliteVisualizer(ShowBase):
         self.setup_camera()
         self.setup_light() # TODO fix rotation
         self.setup_earth()
-        self.setup_ui()
         self.setup_gamepad()
 
-        self.load_omm_model()
+        # Filtering initialization
+        self.selected_global_id = -1
+        self.filter_orbit = 0 # 0: All, 1: LEO, 2: MEO, 3: GEO
+        self.filter_constellation = 0 # 0: All
+        self.ORBIT_TYPES = ["All", "LEO", "MEO", "GEO"]
+        self.CONSTELLATIONS = ["All", "STARLINK", "IRIDIUM", "GPS", "ONEWEB", "GALILEO", "BEIDOU"]
+        self.visible_orbits = []
+        self.visible_indices = []
+        self.orbit_visual_node = None
 
+        self.load_omm_model()
         self.setup_shader()
         self.setup_ray()
-        self.orbit_visual_node = None
+        self.setup_ui()
         
         self.accept("space", self.process_selection)
         self.accept("gamepad-face_a", self.process_selection)
+        self.accept("o", self.toggle_orbit_filter)
+        self.accept("c", self.toggle_constellation_filter)
+        
         self.taskMgr.add(self.process_inputs, "input")
         self.taskMgr.add(self.render_satellites, "render")
 
@@ -95,15 +106,33 @@ class SatelliteVisualizer(ShowBase):
             shadow=(0, 0, 0, 1),
             mayChange=True
         )
+        
+        self.filter_text = OnscreenText(
+            text="Filter: All\nConstellation: All",
+            parent=self.a2dTopLeft,
+            style=1,
+            fg=(1, 1, 1, 1),
+            pos=(0.05, -0.1),
+            align=TextNode.ALeft,
+            scale=0.05,
+            shadow=(0, 0, 0, 1),
+            mayChange=True
+        )
 
 
     def update_ui(self):
-        if self.selected_satellite == -1:
+        # Update filter text
+        orbit_str = self.ORBIT_TYPES[self.filter_orbit]
+        const_str = self.CONSTELLATIONS[self.filter_constellation]
+        count_str = f"Showing: {len(self.visible_orbits)}"
+        self.filter_text.setText(f"Orbit: {orbit_str}\nConstellation: {const_str}\n{count_str}")
+
+        if self.selected_global_id == -1:
             self.ui_text.setText("No Satellite Selected")
             return
 
-        sat = self.satellite_orbits[self.selected_satellite]
-        info = self.satellite_infos[self.selected_satellite]
+        sat = self.satellite_orbits[self.selected_global_id]
+        info = self.satellite_infos[self.selected_global_id]
         
         # Calculate current state
         now = datetime.now(timezone.utc)
@@ -236,7 +265,6 @@ class SatelliteVisualizer(ShowBase):
 
 
     def load_omm_model(self):
-        self.selected_satellite = -1
         self.satellite_infos: list[dict[str,str]] = []
         self.satellite_orbits: list[Satrec] = []
         with open(OMM_PATH) as f:
@@ -262,6 +290,64 @@ class SatelliteVisualizer(ShowBase):
         node = GeomNode("points")
         node.addGeom(geom)
         self.points_np = self.render.attachNewNode(node)
+        
+        self.apply_filters()
+
+    
+    def toggle_orbit_filter(self):
+        self.filter_orbit = (self.filter_orbit + 1) % len(self.ORBIT_TYPES)
+        self.apply_filters()
+
+    def toggle_constellation_filter(self):
+        self.filter_constellation = (self.filter_constellation + 1) % len(self.CONSTELLATIONS)
+        self.apply_filters()
+
+    def apply_filters(self):
+        self.visible_orbits = []
+        self.visible_indices = []
+        
+        orbit_type = self.ORBIT_TYPES[self.filter_orbit]
+        constellation = self.CONSTELLATIONS[self.filter_constellation]
+        
+        # Pre-calc limits for orbit types
+        # Mean Motion (revs/day)
+        # LEO: > 11.25
+        # GEO: 0.99 - 1.01 (approx 1.0)
+        # MEO: 1.01 < mm < 11.25
+        
+        for i, info in enumerate(self.satellite_infos):
+            # Check Constellation
+            if constellation != "All":
+                name = info.get("OBJECT_NAME", "").upper()
+                if constellation not in name:
+                    continue
+            
+            # Check Orbit
+            if orbit_type != "All":
+                mm = float(info.get("MEAN_MOTION", 0))
+                if orbit_type == "LEO" and mm <= 11.25:
+                    continue
+                elif orbit_type == "MEO" and (mm >= 11.25 or mm <= 1.1):
+                    continue
+                elif orbit_type == "GEO" and (mm < 0.9 or mm > 1.1): # Rough GEO filter
+                    continue
+            
+            self.visible_orbits.append(self.satellite_orbits[i])
+            self.visible_indices.append(i)
+            
+        # Update Geometry size
+        num_visible = len(self.visible_orbits)
+        self.vertex_data.setNumRows(num_visible)
+        
+        if num_visible > 0:
+            points_primitive = self.points_np.node().modifyGeom(0).modifyPrimitive(0)
+            points_primitive.clearVertices()
+            points_primitive.addNextVertices(num_visible)
+            points_primitive.closePrimitive()
+        else:
+            points_primitive = self.points_np.node().modifyGeom(0).modifyPrimitive(0)
+            points_primitive.clearVertices()
+            points_primitive.closePrimitive()
 
     
     def setup_shader(self):
@@ -357,7 +443,7 @@ class SatelliteVisualizer(ShowBase):
 
 
     def process_selection(self):
-        if not hasattr(self, 'scaled_positions'):
+        if not hasattr(self, 'scaled_positions') or len(self.visible_orbits) == 0:
             return
 
         cam_pos = np.array(self.camera.getPos(self.render), dtype=np.float32)
@@ -367,7 +453,7 @@ class SatelliteVisualizer(ShowBase):
         fwd = quat.getForward()
         ray_dir = np.array([fwd.x, fwd.y, fwd.z], dtype=np.float32)
 
-        selected_id = -1
+        local_selected_id = -1
         vecs = self.scaled_positions.reshape(-1,3) - cam_pos # reshape removes extra array dimension for time
         dists = np.linalg.norm(vecs, axis=1)
         dists = np.maximum(dists, 1e-6)
@@ -384,17 +470,17 @@ class SatelliteVisualizer(ShowBase):
             candidates_dists = dists[candidate_indices]
             
             best_local_idx = np.argmin(candidates_dists)
-            selected_id = int(candidate_indices[best_local_idx])
+            local_selected_id = int(candidate_indices[best_local_idx])
 
-            if selected_id == self.selected_satellite and len(candidates_dists) > 1:
-                candidates_dists[best_local_idx] = np.inf
-                
-                best_local_idx = np.argmin(candidates_dists)
-                selected_id = int(candidate_indices[best_local_idx])
-
-            self.selected_satellite = selected_id
-            self.points_np.setShaderInput("selected_id", self.selected_satellite)
-            self.draw_orbit(self.selected_satellite)
+            # Logic to cycle if clicking same spot?
+            # Requires tracking local id selection or mapping?
+            # For now simpler logic: just pick closest
+            
+            self.selected_global_id = self.visible_indices[local_selected_id]
+            self.draw_orbit(self.selected_global_id)
+            
+            sat_name = self.satellite_infos[self.selected_global_id].get('OBJECT_NAME', 'Unknown')
+            print(f"Selected: {sat_name} (ID: {self.selected_global_id})")
 
 
     def render_satellites(self, task):
@@ -402,9 +488,12 @@ class SatelliteVisualizer(ShowBase):
         if task.frame % 2 == 0:
             return task.cont
 
+        if not self.visible_orbits:
+             return task.cont
+
         time = datetime.now(timezone.utc)
         jd, fr = jday_datetime(time)
-        orbits = SatrecArray(self.satellite_orbits).sgp4(np.array([jd]), np.array([fr]))
+        orbits = SatrecArray(self.visible_orbits).sgp4(np.array([jd]), np.array([fr]))
         _, positions, velocities = orbits
 
         vertex_writer = GeomVertexWriter(self.vertex_data, "vertex")
@@ -412,11 +501,27 @@ class SatelliteVisualizer(ShowBase):
 
         self.scaled_positions = (positions * SCALE).astype(np.float32)
         num_rows = len(self.scaled_positions)
-        self.vertex_data.setNumRows(num_rows)
+        # vertex_data already resized in apply_filters
+        
         array_handle = self.vertex_data.modifyArray(0)
         memory_view = memoryview(array_handle)
         np_buffer = np.frombuffer(memory_view, dtype=np.float32)
         np_buffer[:] = self.scaled_positions.flatten()
+        
+        # Update shader selection
+        shader_selected_id = -1
+        if self.selected_global_id != -1:
+            try:
+                # Find if global ID is currently visible
+                # visible_indices is sorted if created in order
+                # We can use binary search or just index if we trust it, but index is slow on list
+                # Since we rebuild every filter change, let's just use try/except on index
+                shader_selected_id = self.visible_indices.index(self.selected_global_id)
+            except ValueError:
+                shader_selected_id = -1
+        
+        if ENABLE_SHADER:
+             self.points_np.setShaderInput("selected_id", int(shader_selected_id))
 
         return task.cont
 
