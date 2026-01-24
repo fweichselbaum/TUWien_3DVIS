@@ -624,25 +624,13 @@ class SatelliteVisualizer(ShowBase):
         up = quat.getUp()
         ray_dir = -np.array([up.x, up.y, up.z], dtype=np.float32)
 
-        print(f"DEBUG: cam_pos={cam_pos}")
-        print(f"DEBUG: ray_dir={ray_dir}")
-
         local_selected_id = -1
         vecs = self.scaled_positions.reshape(-1,3) - cam_pos # reshape removes extra array dimension for time
         dists = np.linalg.norm(vecs, axis=1)
         dists = np.maximum(dists, 1e-6)
-
-        if len(vecs) > 0:
-             print(f"DEBUG: Sample Sat Vector={vecs[0]}, Dist={dists[0]}")
-        
-        print(dists)
         
         dots = np.sum(vecs * ray_dir, axis=1)
         cos_angles = dots / dists
-
-        if len(cos_angles) > 0:
-             print(f"DEBUG: Sample Cos Angle={cos_angles[0]}")
-             print(f"DEBUG: Max Cos Angle={np.max(cos_angles)}")
         
         threshold_cos = np.cos(np.radians(2.0))
         
@@ -650,15 +638,12 @@ class SatelliteVisualizer(ShowBase):
         candidate_indices = np.where(mask)[0]
 
         if len(candidate_indices) > 0:
-            candidates_dists = dists[candidate_indices]
-            
-            best_local_idx = np.argmin(candidates_dists)
-            local_selected_id = int(candidate_indices[best_local_idx])
+            # Select the satellite most aligned with the ray (max cosine), 
+            # instead of the closest one by distance.
+            candidate_cos = cos_angles[candidate_indices]
+            best_local_idx_in_candidates = np.argmax(candidate_cos)
+            local_selected_id = int(candidate_indices[best_local_idx_in_candidates])
 
-            # Logic to cycle if clicking same spot?
-            # Requires tracking local id selection or mapping?
-            # For now simpler logic: just pick closest
-            
             self.selected_global_id = self.visible_indices[local_selected_id]
             self.draw_orbit(self.selected_global_id)
             
