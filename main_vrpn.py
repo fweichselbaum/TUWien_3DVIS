@@ -619,19 +619,30 @@ class SatelliteVisualizer(ShowBase):
         cam_pos = np.array(self.flystick9.getPos(self.render), dtype=np.float32)
         
         # Get ray direction from the visual ray node
+        # The visual pointer is scaled along -Z (see create_pointer), so we use the -Z vector
         quat = self.flystick9.getQuat(self.render)
-        fwd = quat.getForward()
-        ray_dir = np.array([fwd.x, fwd.y, fwd.z], dtype=np.float32) * SCALE
+        up = quat.getUp()
+        ray_dir = -np.array([up.x, up.y, up.z], dtype=np.float32)
+
+        print(f"DEBUG: cam_pos={cam_pos}")
+        print(f"DEBUG: ray_dir={ray_dir}")
 
         local_selected_id = -1
         vecs = self.scaled_positions.reshape(-1,3) - cam_pos # reshape removes extra array dimension for time
         dists = np.linalg.norm(vecs, axis=1)
         dists = np.maximum(dists, 1e-6)
+
+        if len(vecs) > 0:
+             print(f"DEBUG: Sample Sat Vector={vecs[0]}, Dist={dists[0]}")
         
         print(dists)
         
         dots = np.sum(vecs * ray_dir, axis=1)
         cos_angles = dots / dists
+
+        if len(cos_angles) > 0:
+             print(f"DEBUG: Sample Cos Angle={cos_angles[0]}")
+             print(f"DEBUG: Max Cos Angle={np.max(cos_angles)}")
         
         threshold_cos = np.cos(np.radians(2.0))
         
