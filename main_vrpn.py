@@ -655,6 +655,27 @@ class SatelliteVisualizer(ShowBase):
         candidate_indices = np.where(mask)[0]
 
         if len(candidate_indices) > 0:
+            # Filter out satellites occluded by Earth
+            R = EARTH_RADIUS * SCALE
+            d_vecs = vecs[candidate_indices]
+            a = np.sum(d_vecs**2, axis=1)
+            b = 2 * np.sum(cam_pos * d_vecs, axis=1)
+            c = np.dot(cam_pos, cam_pos) - R**2
+            delta = b**2 - 4*a*c
+
+            is_occluded = np.zeros(len(candidate_indices), dtype=bool)
+            real_roots = delta >= 0
+
+            if np.any(real_roots):
+                sqrt_delta = np.sqrt(delta[real_roots])
+                t1 = (-b[real_roots] - sqrt_delta) / (2 * a[real_roots])
+                # Occluded if intersection is real, and happens between camera and satellite (0 < t < 0.99)
+                occlusion_cond = (t1 > 0) & (t1 < 0.99)
+                is_occluded[real_roots] = occlusion_cond
+            
+            candidate_indices = candidate_indices[~is_occluded]
+
+        if len(candidate_indices) > 0:
             # Select the satellite most aligned with the ray (max cosine), 
             # instead of the closest one by distance.
             candidate_cos = cos_angles[candidate_indices]
