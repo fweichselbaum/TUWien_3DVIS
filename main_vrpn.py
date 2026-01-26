@@ -86,7 +86,7 @@ class SatelliteVisualizer(ShowBase):
         
         
         self.setup_vrpn()
-        # self.setup_stereo()
+        self.setup_stereo()
         
         self.setup_camera()
         self.update_camera()
@@ -256,6 +256,7 @@ class SatelliteVisualizer(ShowBase):
     def poll_vrpn_server(self, t):
         self.vrpnclient.poll()
         self.head.setQuat(Quat()) # discard tracked orientation (cannot face away from wall)
+        self.head.setPos(self.head, LVecBase3(0, -self.HEIGHT_OFFSET, 0))
         return Task.cont
         
     
