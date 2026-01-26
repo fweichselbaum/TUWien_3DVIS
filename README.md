@@ -10,13 +10,8 @@ A (kinda) real-time satellite orbit visualization using python, panda3d and sgp4
 - [x] Optimize orbit calculation using cpp and numpy
 - [x] Render satellites without shader
 - [x] Render satellites with shader
-- [ ] Make shader implemenation more robust 
-- [ ] Make satellites clickable
-- [ ] Render orbit path when clicked
-- [ ] Show data about satellites when clicked
-- [ ] Filter satellites by constellation
-
-## Technologies 
-
-X360CE
-VRPN
+- [x] Make shader implemenation more robust 
+- [x] Make satellites clickable
+- [x] Render orbit path when clicked
+- [x] Show data about satellites when clicked
+- [x] Filter satellites by constellation
