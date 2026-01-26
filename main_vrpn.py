@@ -36,7 +36,7 @@ import sys
 # Constants
 SCALE = 0.001  # 1 unit = 1000 km
 EARTH_RADIUS = 6371.0
-EARTH_TEXTURE_OFFSET = 160 # 148 TODO fix with better texture
+EARTH_TEXTURE_OFFSET = 270 # 148 TODO fix with better texture
 
 # Shader
 ENABLE_SHADER = True
@@ -44,7 +44,7 @@ VERT_SHADER = "shader/satellites.vert"
 FRAG_SHADER = "shader/satellites.frag"
 
 # Data source
-OMM_FILE = "all.csv"
+OMM_FILE = "test.csv"
 if len(sys.argv) > 1:
     OMM_FILE = sys.argv[1]
 OMM_PATH = os.path.join("res", OMM_FILE)
@@ -118,6 +118,25 @@ class SatelliteVisualizer(ShowBase):
         self.accept("c", self.toggle_constellation_filter)
 
         self.taskMgr.add(self.render_satellites, "render")
+        self.taskMgr.add(self.spin, "render")
+    
+    def spin(self, task):
+        self.orbit_h += 0.3
+        self.orbit_p = max(-89.0, min(89.0, self.orbit_p))
+        self.orbit_distance = max(10.0, min(500.0, self.orbit_distance))
+
+        rad_h = np.radians(self.orbit_h)
+        rad_p = np.radians(self.orbit_p)
+        
+        x = self.orbit_distance * np.sin(rad_h) * np.cos(rad_p)
+        y = -self.orbit_distance * np.cos(rad_h) * np.cos(rad_p)
+        z = self.orbit_distance * np.sin(rad_p)
+        
+
+        # translation
+        self.rig.setPos(LVecBase3(x,y,z))
+        self.rig.lookAt(0,0,0)
+        return task.cont
 
 
     def create_pointer(self, parent, length=10.0, radius=0.02):
@@ -413,7 +432,7 @@ class SatelliteVisualizer(ShowBase):
 
 
     def setup_camera(self):
-        self.orbit_distance = 150.0
+        self.orbit_distance = 15.0
         self.orbit_h = 0.0
         self.orbit_p = 0.0
 
