@@ -266,9 +266,16 @@ class SatelliteVisualizer(ShowBase):
         # Default COVISE-style scene navigation:
 
         tbtn_pressed = self.buttons.getButtonState(SatelliteVisualizer.TRANSFORMATION_BUTTON_NUMBER)
+        btn2_pressed = self.buttons.getButtonState(2)
 
         if not self.transformation_started and tbtn_pressed:
             self.transformation_started = True
+
+        if not self.selection_started and btn2_pressed:
+            self.selection_started = True
+
+        if not btn2_pressed:
+            self.selection_started = False
 
         if not tbtn_pressed:
             self.transformation_started = False
@@ -282,7 +289,7 @@ class SatelliteVisualizer(ShowBase):
 
             self.orbit_h += moved.getX()
             self.orbit_p += moved.getZ()
-            self.orbit_distance -= moved.getY()
+            self.orbit_distance -= (moved.getY() / 2)
             
             
             self.orbit_p = max(-89.0, min(89.0, self.orbit_p))
@@ -311,7 +318,7 @@ class SatelliteVisualizer(ShowBase):
 
         # handle your Flystick button presses here
         # example:
-        if self.buttons.getButtonState(2): # trigger Flystick 9
+        if self.selection_started: # trigger Flystick 9
             self.process_selection()
         return Task.cont
 
