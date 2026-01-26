@@ -326,8 +326,10 @@ class SatelliteVisualizer(ShowBase):
         # example:
         if not self.constellation_selection_started and btn3_pressed:
             self.constellation_selection_started = True
+            self.toggle_constellation_filter()
         if not self.orbit_selection_started and btn3_pressed:
             self.orbit_selection_started = True
+            self.toggle_orbit_filter()
         if not self.selection_started and btn2_pressed: # trigger Flystick 9
             self.selection_started = True
             self.process_selection()
