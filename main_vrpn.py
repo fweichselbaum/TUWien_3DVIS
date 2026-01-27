@@ -148,8 +148,9 @@ class SatelliteVisualizer(ShowBase):
 
         # Compensate for floor height (VRPN origin is on floor, Panda3D camera is at eye level)
         self.vrpn_origin = self.render.attachNewNode("vrpn_origin")
-        self.vrpn_origin.setPos(0, 0, -SatelliteVisualizer.HEIGHT_OFFSET)
+        self.vrpn_origin.setPos(0, -self.HEIGHT_OFFSET, 0)
         self.vrpn_origin.reparentTo(self.rig)
+        # self.vrpn_origin = self.rig
 
         # VRPN trackers:
         
