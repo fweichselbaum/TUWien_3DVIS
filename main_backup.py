@@ -8,6 +8,7 @@ from panda3d.core import (
     loadPrcFile,
     Vec3,
     LVecBase3,
+    LVecBase2,
     Shader,
     DirectionalLight,
     AmbientLight,
@@ -36,7 +37,7 @@ import sys
 # Constants
 SCALE = 0.001  # 1 unit = 1000 km
 EARTH_RADIUS = 6371.0
-EARTH_TEXTURE_OFFSET = 270 # 148 TODO fix with better texture
+EARTH_TEXTURE_OFFSET = 160 # 148 TODO fix with better texture
 
 # Shader
 ENABLE_SHADER = True
@@ -84,6 +85,7 @@ class SatelliteVisualizer(ShowBase):
         self.setup_light() # TODO fix rotation
         self.setup_earth()
         
+        
         self.setup_vrpn()
         self.setup_stereo()
         
@@ -93,8 +95,6 @@ class SatelliteVisualizer(ShowBase):
         # COVISE-style navigation
         self.transformation_started = False
         self.selection_started = False
-        self.constellation_selection_started = False
-        self.orbit_selection_started = False
         self.reference_pos = LVecBase3(0, 0, 0)
         self.reference_quat = Quat()
 
@@ -118,7 +118,7 @@ class SatelliteVisualizer(ShowBase):
         self.accept("c", self.toggle_constellation_filter)
 
         self.taskMgr.add(self.render_satellites, "render")
-    
+
 
     def create_pointer(self, parent, length=10.0, radius=0.02):
         pointer = parent.attachNewNode("pointer")
@@ -146,11 +146,6 @@ class SatelliteVisualizer(ShowBase):
         self.rig = self.render.attachNewNode("rig")
         self.camera.reparentTo(self.rig)
 
-        # Compensate for floor height (VRPN origin is on floor, Panda3D camera is at eye level)
-        self.vrpn_origin = self.render.attachNewNode("vrpn_origin")
-        self.vrpn_origin.setPos(0, 0, -SatelliteVisualizer.HEIGHT_OFFSET)
-        self.vrpn_origin.reparentTo(self.rig)
-
         # VRPN trackers:
         
         # In Panda3D, input is handled via the data graph, a tree that lives separately to the scene graph.
@@ -165,7 +160,9 @@ class SatelliteVisualizer(ShowBase):
         d2s_head = Transform2SG("d2s_head")                                 # create a transform object to transform from DATA graph to SCENE graph (SG)
         self.head_tracker.addChild(d2s_head)                                # add the transform object as a child to the DATA graph node
         d2s_head.setNode(self.head.node())                                  # set the output node to the SCENE graph node
-        self.head.reparentTo(self.vrpn_origin)
+        self.head.reparentTo(self.rig)
+        
+        self.rig.setPos(0.0, 0.0, -self.HEIGHT_OFFSET)
 
         # attach left and righ eye trackers (only used for projection matrix calculation)
         self.left = self.head.attachNewNode("left")
@@ -180,7 +177,8 @@ class SatelliteVisualizer(ShowBase):
         d2s_flystick9 = Transform2SG("d2s_flystick9")                       # create a transform object to transform from DATA graph to SCENE graph (SG)
         self.flystick9_tracker.addChild(d2s_flystick9)                      # add the transform object as a child to the DATA graph node
         d2s_flystick9.setNode(self.flystick9.node())                        # set the output node to the SCENE graph node
-        self.flystick9.reparentTo(self.vrpn_origin)
+        self.flystick9.reparentTo(self.rig)
+   
 
         self.flystick9_pointer = self.create_pointer(self.flystick9)
         
@@ -190,23 +188,16 @@ class SatelliteVisualizer(ShowBase):
 
 
     def setup_stereo(self):
+
         # disable default cam
         base.camNode.setActive(False)
         base.cam.node().setActive(False)
 
         # make_display_region automatically returns a StereoDisplayRegion if framebuffer-stereo is set to 1 in config
         # both left and right display region share the default camera initially
-
         self.stereo_display_region = base.win.make_display_region()
-        print(self.stereo_display_region.isStereo())
-        if self.stereo_display_region.isStereo():
-            print("stereo")
-            left_display_region = self.stereo_display_region.getLeftEye()
-            right_display_region = self.stereo_display_region.getRightEye()
-        else:
-            print("mono")
-            left_display_region = self.stereo_display_region
-            right_display_region = self.stereo_display_region
+        left_display_region = self.stereo_display_region.getLeftEye()
+        right_display_region = self.stereo_display_region.getRightEye()
         
         # create and configure left and right eye camera:
 
@@ -216,6 +207,7 @@ class SatelliteVisualizer(ShowBase):
         screen_z = SatelliteVisualizer.Z_CALIBRATION_METERS
         screen_left = -SatelliteVisualizer.LEDWALL_WIDTH_METERS / 2.0
         screen_right = SatelliteVisualizer.LEDWALL_WIDTH_METERS / 2.0
+
         screen_top = SatelliteVisualizer.LEDWALL_HEIGHT_METERS / 2.0
         screen_bottom = -SatelliteVisualizer.LEDWALL_HEIGHT_METERS / 2.0
 
@@ -223,6 +215,7 @@ class SatelliteVisualizer(ShowBase):
         self.screen_ur = LVecBase3(screen_right, screen_z, screen_top)
         self.screen_ll = LVecBase3(screen_left, screen_z, screen_bottom)
         self.screen_lr = LVecBase3(screen_right, screen_z, screen_bottom)
+        
 
         left_lens = PerspectiveLens()
         left_lens.setNear(SatelliteVisualizer.NEAR_PLANE)
@@ -254,10 +247,14 @@ class SatelliteVisualizer(ShowBase):
         lr_r = self.right.getRelativePoint(self.rig, self.screen_lr)
 
         flags = (Lens.FC_off_axis + Lens.FC_aspect_ratio)
+        # 
+        #+  Lens.FC_camera_plane
+        
 
         self.left_cam.node().getLens().setFrustumFromCorners(
             ul_l, ur_l, ll_l, lr_l, flags
         )
+        
 
         self.right_cam.node().getLens().setFrustumFromCorners(
             ul_r, ur_r, ll_r, lr_r, flags
@@ -268,8 +265,9 @@ class SatelliteVisualizer(ShowBase):
 
     def poll_vrpn_server(self, t):
         self.vrpnclient.poll()
+        #print("head", self.head.getPos())
+        #print("head_tracker", self.head_tracker.getPos())
         self.head.setQuat(Quat()) # discard tracked orientation (cannot face away from wall)
-        self.head.getPos()
         return Task.cont
         
     
@@ -281,8 +279,6 @@ class SatelliteVisualizer(ShowBase):
 
         tbtn_pressed = self.buttons.getButtonState(SatelliteVisualizer.TRANSFORMATION_BUTTON_NUMBER)
         btn2_pressed = self.buttons.getButtonState(2)
-        btn3_pressed = self.buttons.getButtonState(3)
-        btn4_pressed = self.buttons.getButtonState(4)
 
         if not self.transformation_started and tbtn_pressed:
             self.transformation_started = True
@@ -291,12 +287,9 @@ class SatelliteVisualizer(ShowBase):
             self.transformation_started = False
             self.reference_pos = LVecBase3(self.flystick9.getPos())
             self.reference_quat = Quat(self.flystick9.getQuat())       
+        
         if not btn2_pressed:
             self.selection_started = False
-        if not btn3_pressed:
-            self.constellation_selection_started = False
-        if not btn4_pressed:
-            self.orbit_selection_started = False
 
         if self.transformation_started:
             dt = globalClock.getDt()
@@ -323,14 +316,17 @@ class SatelliteVisualizer(ShowBase):
             self.rig.setPos(LVecBase3(x,y,z))
             self.rig.lookAt(0,0,0)
 
+            # rotation
+            # q_old_inv = Quat(self.reference_quat)
+            # q_old_inv.invertInPlace()
+            # q_diff = q_old_inv * self.flystick9.getQuat()
+            # h, _, _ = q_diff.getHpr()
+            # q_yaw_only = Quat()
+            # q_yaw_only.setHpr((h * SatelliteVisualizer.TRANSFORMATION_SPEED * dt, 0, 0))
+            # self.rig.setQuat(self.rig.getQuat() * q_yaw_only)
+
         # handle your Flystick button presses here
         # example:
-        if not self.constellation_selection_started and btn3_pressed:
-            self.constellation_selection_started = True
-            self.toggle_constellation_filter()
-        if not self.orbit_selection_started and btn3_pressed:
-            self.orbit_selection_started = True
-            self.toggle_orbit_filter()
         if not self.selection_started and btn2_pressed: # trigger Flystick 9
             self.selection_started = True
             self.process_selection()
@@ -414,9 +410,9 @@ class SatelliteVisualizer(ShowBase):
 
 
     def setup_camera(self):
-        self.orbit_distance = 15.0
+        self.orbit_distance = 150.0
         self.orbit_h = 0.0
-        self.orbit_p = 0.0
+        self.orbit_p = self.HEIGHT_OFFSET
 
 
     def update_camera(self):
@@ -431,6 +427,7 @@ class SatelliteVisualizer(ShowBase):
         self.rig.lookAt(0, 0, 0)
 
     
+
     def setup_light(self):
         time = datetime.now(timezone.utc)
         day_of_year = time.timetuple().tm_yday
@@ -633,6 +630,8 @@ class SatelliteVisualizer(ShowBase):
     def process_selection(self):
         if not hasattr(self, 'scaled_positions') or len(self.visible_orbits) == 0:
             return
+            
+        print("selection")
 
         cam_pos = np.array(self.flystick9.getPos(self.render), dtype=np.float32)
         
@@ -654,27 +653,6 @@ class SatelliteVisualizer(ShowBase):
         
         mask = cos_angles > threshold_cos
         candidate_indices = np.where(mask)[0]
-
-        if len(candidate_indices) > 0:
-            # Filter out satellites occluded by Earth
-            R = EARTH_RADIUS * SCALE
-            d_vecs = vecs[candidate_indices]
-            a = np.sum(d_vecs**2, axis=1)
-            b = 2 * np.sum(cam_pos * d_vecs, axis=1)
-            c = np.dot(cam_pos, cam_pos) - R**2
-            delta = b**2 - 4*a*c
-
-            is_occluded = np.zeros(len(candidate_indices), dtype=bool)
-            real_roots = delta >= 0
-
-            if np.any(real_roots):
-                sqrt_delta = np.sqrt(delta[real_roots])
-                t1 = (-b[real_roots] - sqrt_delta) / (2 * a[real_roots])
-                # Occluded if intersection is real, and happens between camera and satellite (0 < t < 0.99)
-                occlusion_cond = (t1 > 0) & (t1 < 0.99)
-                is_occluded[real_roots] = occlusion_cond
-            
-            candidate_indices = candidate_indices[~is_occluded]
 
         if len(candidate_indices) > 0:
             # Select the satellite most aligned with the ray (max cosine), 
